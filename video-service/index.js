@@ -10,7 +10,7 @@ const io = require("socket.io")(server, {
   },
 });
 
-const roomCode = {};
+const roomCode = {}; // Holds the current code for each room
 
 io.on("connection", (socket) => {
   console.log('New client connected:', socket.id);
@@ -20,10 +20,13 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     console.log(`User ${socket.id} joined room ${roomId}`);
 
-    // Send existing code to the new user
-    if (roomCode[roomId]) {
-      socket.emit("codeChange", roomCode[roomId]);
+    // Initialize room code if not present
+    if (!roomCode[roomId]) {
+      roomCode[roomId] = '// Start coding...';
     }
+
+    // Send existing code to the new user
+    socket.emit("codeChange", { code: roomCode[roomId] });
 
     // Notify others in the room
     socket.to(roomId).emit("userJoined", socket.id);
@@ -48,17 +51,20 @@ io.on("connection", (socket) => {
     io.to(data.to).emit("callAccepted", data.signal);
   });
 
-  // Handle code changes
-  socket.on("codeChange", ({ roomId, code }) => {
-    console.log(`Code change in room ${roomId} by ${socket.id}`);
-    roomCode[roomId] = code;
-    socket.to(roomId).emit("codeChange", code);
-  });
-
   socket.on('getUsersInRoom', (roomId) => {
     const clients = io.sockets.adapter.rooms.get(roomId);
     const users = clients ? Array.from(clients) : [];
     socket.emit('usersInRoom', users);
+  });
+
+  // Handle code changes
+  socket.on('codeChange', ({ roomId, code }) => {
+    console.log(`Received code change for room ${roomId}`);
+    // Update the room's code
+    roomCode[roomId] = code;
+
+    // Broadcast the code change to all other clients in the room
+    socket.to(roomId).emit('codeChange', { code });
   });
 });
 
