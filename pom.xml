@@ -10,7 +10,7 @@
     <modules>
         <module>gateway</module>
         <module>user-service</module>
-
+        <module>video-service</module>
     </modules>
 
     <dependencyManagement>
