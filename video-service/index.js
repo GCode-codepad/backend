@@ -78,6 +78,12 @@ io.on("connection", (socket) => {
     // Broadcast the language change to all other clients in the room
     socket.to(roomId).emit('languageChange', { language });
   });
+
+  // Handle code output
+  socket.on('codeOutput', ({ roomId, output }) => {
+    // Broadcast the code output to all other clients in the room
+    socket.to(roomId).emit('codeOutput', { output });
+  });
 });
 
 server.listen(8002, () => console.log("Server is running on port 8002"));
