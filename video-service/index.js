@@ -11,6 +11,7 @@ const io = require("socket.io")(server, {
 });
 
 const roomCode = {}; // Holds the current code for each room
+const roomLanguage = {};
 
 io.on("connection", (socket) => {
   console.log('New client connected:', socket.id);
@@ -27,6 +28,7 @@ io.on("connection", (socket) => {
 
     // Send existing code to the new user
     socket.emit("codeChange", { code: roomCode[roomId] });
+    socket.emit("languageChange", { language: roomLanguage[roomId] });
 
     // Notify others in the room
     socket.to(roomId).emit("userJoined", socket.id);
@@ -65,6 +67,16 @@ io.on("connection", (socket) => {
 
     // Broadcast the code change to all other clients in the room
     socket.to(roomId).emit('codeChange', { code });
+  });
+
+  // Handle language changes
+  socket.on('languageChange', ({ roomId, language }) => {
+    console.log(`Received language change for room ${roomId}: ${language}`);
+    // Update the room's language
+    roomLanguage[roomId] = language;
+
+    // Broadcast the language change to all other clients in the room
+    socket.to(roomId).emit('languageChange', { language });
   });
 });
 
