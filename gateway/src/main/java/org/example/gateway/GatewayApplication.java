@@ -17,6 +17,9 @@ public class GatewayApplication {
     @Value("${user.service.uri}")
     private String userServiceUri;
 
+    @Value("${code.service.uri}")
+    private String codeServiceUri;
+
     @Value("${cors.allowed.origins}")
     private String[] allowedOrigins;
 
@@ -30,6 +33,9 @@ public class GatewayApplication {
                 .route("user-service", r -> r.path("/user/**")
                         .filters(f -> f.rewritePath("/user/(?<segment>.*)", "/api/${segment}"))
                         .uri(userServiceUri))
+                .route("code-service", r -> r.path("/code/**")
+                        .filters(f -> f.rewritePath("/code/(?<segment>.*)", "/api/${segment}"))
+                        .uri(codeServiceUri))
                 .build();
     }
 
