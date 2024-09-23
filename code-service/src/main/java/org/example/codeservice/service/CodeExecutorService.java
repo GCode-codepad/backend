@@ -1,6 +1,8 @@
 package org.example.codeservice.service;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -8,53 +10,44 @@ import java.util.concurrent.TimeUnit;
 public class CodeExecutorService {
 
     public static String execute(String language, String code) {
-        String fileName = "Main";
-        String fileExtension = "";
-
-        switch (language) {
-            case "java":
-                fileExtension = ".java";
-                break;
-            case "python":
-                fileExtension = ".py";
-                break;
+        // Input validation
+        if (language == null || code == null) {
+            return "Error: Language and code must not be null.";
         }
 
-        Path codeFilePath = Paths.get("/tmp", fileName + fileExtension);
+        String fileExtension = getFileExtension(language);
+        if (fileExtension == null) {
+            return "Error: Unsupported language.";
+        }
+
+        // Generate a unique filename to prevent conflicts
+        String uniqueId = UUID.randomUUID().toString();
+        String fileName = "Main_" + uniqueId + fileExtension;
+        Path codeFilePath = Paths.get("/tmp", fileName);
 
         try {
+            // Write the code to a temporary file
             Files.write(codeFilePath, code.getBytes());
 
             // Build the Docker command
-            List<String> command = new ArrayList<>();
-            command.add("docker");
-            command.add("run");
-            command.add("--rm");
-            command.add("--network");
-            command.add("none");
-            command.add("--memory");
-            command.add("128m");
-            command.add("--cpus");
-            command.add("0.5");
-            command.add("-v");
-            command.add(codeFilePath.getParent().toString() + ":/code");
-            command.add(getDockerImage(language));
-            command.addAll(getRunCommand(language, "/code/" + fileName + fileExtension));
+            List<String> command = buildDockerCommand(language, codeFilePath);
 
             // Execute the command
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true);
+            pb.redirectErrorStream(true); // Merge stdout and stderr
             Process process = pb.start();
 
-            // Read the output
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            // Capture the output
             StringBuilder output = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append("\n");
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
             }
 
-            // Wait for the process to finish
+            // Wait for the process to finish with a timeout
             boolean finished = process.waitFor(10, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
@@ -64,38 +57,79 @@ public class CodeExecutorService {
             return output.toString();
 
         } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            // Log the exception (you can replace this with a logging framework)
+            System.err.println("Error executing code: " + e.getMessage());
             return "Error executing code: " + e.getMessage();
         } finally {
             // Clean up the temporary file
             try {
                 Files.deleteIfExists(codeFilePath);
             } catch (IOException e) {
-                e.printStackTrace();
+                System.err.println("Failed to delete temporary file: " + e.getMessage());
             }
         }
     }
 
-    private static String getDockerImage(String language) {
-        switch (language) {
+    private static String getFileExtension(String language) {
+        switch (language.toLowerCase()) {
             case "java":
-                return "openjdk:11";
+                return ".java";
             case "python":
-                return "python:3.8";
+                return ".py";
             default:
-                throw new IllegalArgumentException("Unsupported language: " + language);
+                return null;
         }
     }
 
+    private static List<String> buildDockerCommand(String language, Path codeFilePath) {
+        String dockerImage = getDockerImage(language);
+        if (dockerImage == null) {
+            throw new IllegalArgumentException("Unsupported language: " + language);
+        }
+
+        String containerCodePath = "/code/" + codeFilePath.getFileName().toString();
+
+        List<String> command = new ArrayList<>();
+        command.add("docker");
+        command.add("run");
+        command.add("--rm");
+        command.add("--network");
+        command.add("none");
+        command.add("--memory");
+        command.add("128m");
+        command.add("--cpus");
+        command.add("0.5");
+        command.add("-v");
+        command.add(codeFilePath.getParent().toString() + ":/code:ro"); // Mount as read-only
+        command.add(dockerImage);
+        command.addAll(getRunCommand(language, containerCodePath));
+
+        return command;
+    }
+
+    private static String getDockerImage(String language) {
+        Map<String, String> languageToImageMap = Map.of(
+                "java", "openjdk:11",
+                "python", "python:3.8"
+        );
+        return languageToImageMap.get(language.toLowerCase());
+    }
+
     private static List<String> getRunCommand(String language, String codeFilePath) {
-        switch (language) {
+        switch (language.toLowerCase()) {
             case "java":
-                return Arrays.asList("sh", "-c", "javac " + codeFilePath + " && java -cp /code Main");
+                String className = getClassName(codeFilePath);
+                return Arrays.asList("sh", "-c", "javac " + codeFilePath + " && java -cp /code " + className);
             case "python":
                 return Arrays.asList("python", codeFilePath);
             default:
                 throw new IllegalArgumentException("Unsupported language: " + language);
         }
     }
-}
 
+    private static String getClassName(String codeFilePath) {
+        // Extracts the class name from the file name
+        String fileName = Paths.get(codeFilePath).getFileName().toString();
+        return fileName.substring(0, fileName.lastIndexOf('.'));
+    }
+}
