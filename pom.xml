@@ -11,6 +11,7 @@
         <module>gateway</module>
         <module>user-service</module>
         <module>video-service</module>
+        <module>code-service</module>
     </modules>
 
     <dependencyManagement>
