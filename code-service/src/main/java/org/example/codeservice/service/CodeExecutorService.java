@@ -1,6 +1,7 @@
 package org.example.codeservice.service;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.*;
@@ -20,17 +21,24 @@ public class CodeExecutorService {
             return "Error: Unsupported language.";
         }
 
-        // Generate a unique filename to prevent conflicts
-        String uniqueId = UUID.randomUUID().toString();
-        String fileName = "Main_" + uniqueId + fileExtension;
-        Path codeFilePath = Paths.get("/tmp", fileName);
+        // Create a unique temporary directory
+        Path tempDir;
+        try {
+            tempDir = Files.createTempDirectory("code_execution");
+        } catch (IOException e) {
+            return "Error creating temporary directory: " + e.getMessage();
+        }
+
+        // Use the correct file name
+        String fileName = language.equalsIgnoreCase("java") ? "Main.java" : "main" + fileExtension;
+        Path codeFilePath = tempDir.resolve(fileName);
 
         try {
-            // Write the code to a temporary file
+            // Write the code to a file
             Files.write(codeFilePath, code.getBytes());
 
             // Build the Docker command
-            List<String> command = buildDockerCommand(language, codeFilePath);
+            List<String> command = buildDockerCommand(language, codeFilePath, tempDir);
 
             // Execute the command
             ProcessBuilder pb = new ProcessBuilder(command);
@@ -61,11 +69,14 @@ public class CodeExecutorService {
             System.err.println("Error executing code: " + e.getMessage());
             return "Error executing code: " + e.getMessage();
         } finally {
-            // Clean up the temporary file
+            // Clean up the temporary directory
             try {
-                Files.deleteIfExists(codeFilePath);
+                Files.walk(tempDir)
+                        .sorted(Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(File::delete);
             } catch (IOException e) {
-                System.err.println("Failed to delete temporary file: " + e.getMessage());
+                System.err.println("Failed to delete temporary directory: " + e.getMessage());
             }
         }
     }
@@ -81,7 +92,7 @@ public class CodeExecutorService {
         }
     }
 
-    private static List<String> buildDockerCommand(String language, Path codeFilePath) {
+    private static List<String> buildDockerCommand(String language, Path codeFilePath, Path tempDir) {
         String dockerImage = getDockerImage(language);
         if (dockerImage == null) {
             throw new IllegalArgumentException("Unsupported language: " + language);
@@ -100,7 +111,7 @@ public class CodeExecutorService {
         command.add("--cpus");
         command.add("0.5");
         command.add("-v");
-        command.add(codeFilePath.getParent().toString() + ":/code:ro"); // Mount as read-only
+        command.add(tempDir.toString() + ":/code:ro"); // Mount as read-only
         command.add(dockerImage);
         command.addAll(getRunCommand(language, containerCodePath));
 
@@ -119,7 +130,8 @@ public class CodeExecutorService {
         switch (language.toLowerCase()) {
             case "java":
                 String className = getClassName(codeFilePath);
-                return Arrays.asList("sh", "-c", "javac " + codeFilePath + " && java -cp /code " + className);
+                return Arrays.asList("sh", "-c",
+                        "javac -d /tmp " + codeFilePath + " && java -cp /tmp " + className);
             case "python":
                 return Arrays.asList("python", codeFilePath);
             default:
