@@ -15,6 +15,11 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @GetMapping()
+    public String test() {
+        return "Hello";
+    }
+
     // Create User
     @PostMapping
     public ResponseEntity<User> createUser(@RequestBody User user) {
